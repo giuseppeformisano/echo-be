@@ -19,7 +19,7 @@ const server = https.createServer(options, app);
 // 3. Collega Socket.io al server HTTPS
 const io = new Server(server, {
     cors: { 
-        origin: "https://192.168.1.54:5173", // URL del tuo React in HTTPS
+        origin: "*", // URL del tuo React in HTTPS
         methods: ["GET", "POST"]
     }
 });
@@ -60,9 +60,8 @@ io.on('connection', (socket) => {
 });
 
 // Nota: 0.0.0.0 permette l'ascolto su tutti gli indirizzi, incluso il tuo IP 1.54
-server.listen(4000, '0.0.0.0', () => {
+server.listen(process.env.PORT || 4000, '0.0.0.0', () => {
     console.log('═════════════════════════════════════════');
     console.log('🚀 [SERVER] HTTPS (WSS) avviato!');
-    console.log('🌍 Indirizzo: https://192.168.1.54:4000');
     console.log('═════════════════════════════════════════');
 });
