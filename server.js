@@ -22,7 +22,7 @@ const server = http.createServer(app);
 
 // 3. Collega Socket.io al server HTTPS
 const io = new Server(server, {
-    cors: { 
+    cors: {
         origin: "*", // URL del tuo React in HTTPS
         methods: ["GET", "POST"]
     }
@@ -37,11 +37,16 @@ io.on('connection', (socket) => {
 
     socket.on('queue:join', async () => {
         console.log('🔍 [QUEUE] Utente ' + socket.id + ' in coda');
-        
+
         if (waitingUser && waitingUser.id !== socket.id) {
             console.log('✨ [MATCH] Match tra ' + waitingUser.id + ' e ' + socket.id);
             try {
-                const response = await axios.post('https://api.daily.co/v1/rooms');
+                const response = await axios.post('https://api.daily.co/v1/rooms', {}, {
+                    headers: {
+                        Authorization: `Bearer ${process.env.DAILY_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
                 const matchData = { url: response.data.url, roomId: response.data.roomId };
 
                 io.to(socket.id).emit('match:found', matchData);
