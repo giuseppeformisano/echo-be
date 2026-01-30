@@ -41,7 +41,8 @@ io.on('connection', (socket) => {
         if (waitingUser && waitingUser.id !== socket.id) {
             console.log('✨ [MATCH] Match tra ' + waitingUser.id + ' e ' + socket.id);
             try {
-                const matchData = { url: 'https://echoapp.daily.co/AYfkpmGrGRrVUK5poGx4', roomId: '69d10842-2432-45b5-a3ea-c243b59ac10c' };
+                const response = await axios.post('https://api.daily.co/v1/rooms');
+                const matchData = { url: response.data.url, roomId: response.data.roomId };
 
                 io.to(socket.id).emit('match:found', matchData);
                 io.to(waitingUser.id).emit('match:found', matchData);
