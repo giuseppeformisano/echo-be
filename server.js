@@ -29,6 +29,7 @@ const io = new Server(server, {
 });
 
 console.log('ℹ️ [INIT] Server HTTPS e Socket.IO (WSS) configurati');
+console.log('ℹ️ [INIT] Daily.co API Key caricata:', !!process.env.DAILY_API_KEY);
 
 let waitingUser = null;
 
