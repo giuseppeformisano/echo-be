@@ -8,13 +8,17 @@ require('dotenv').config({ path: __dirname + '/.env' });
 const app = express();
 
 // 1. Configura i certificati (assicurati che i file siano nella cartella del server)
-const options = {
-    key: fs.readFileSync('./cert/localhost+2-key.pem'),
-    cert: fs.readFileSync('./cert/localhost+2.pem')
-};
+// const options = {
+//     key: fs.readFileSync('./cert/localhost+2-key.pem'),
+//     cert: fs.readFileSync('./cert/localhost+2.pem')
+// };
 
 // 2. Crea il server HTTPS
-const server = https.createServer(options, app);
+// const server = https.createServer(options, app);
+
+// USA QUESTA VERSIONE (standard)
+const http = require('http');
+const server = http.createServer(app);
 
 // 3. Collega Socket.io al server HTTPS
 const io = new Server(server, {
@@ -62,6 +66,6 @@ io.on('connection', (socket) => {
 // Nota: 0.0.0.0 permette l'ascolto su tutti gli indirizzi, incluso il tuo IP 1.54
 server.listen(process.env.PORT || 4000, '0.0.0.0', () => {
     console.log('═════════════════════════════════════════');
-    console.log('🚀 [SERVER] HTTPS (WSS) avviato!');
+    console.log('🚀 Server avviato!');
     console.log('═════════════════════════════════════════');
 });
