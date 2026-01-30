@@ -9,8 +9,8 @@ const app = express();
 
 // 1. Configura i certificati (assicurati che i file siano nella cartella del server)
 const options = {
-    key: fs.readFileSync('./localhost+2-key.pem'),
-    cert: fs.readFileSync('./localhost+2.pem')
+    key: fs.readFileSync('./cert/localhost+2-key.pem'),
+    cert: fs.readFileSync('./cert/localhost+2.pem')
 };
 
 // 2. Crea il server HTTPS
