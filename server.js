@@ -8,17 +8,17 @@ require('dotenv').config({ path: __dirname + '/.env' });
 const app = express();
 
 // 1. Configura i certificati (assicurati che i file siano nella cartella del server)
-// const options = {
-//     key: fs.readFileSync('./cert/localhost+2-key.pem'),
-//     cert: fs.readFileSync('./cert/localhost+2.pem')
-// };
+const options = {
+    key: fs.readFileSync('./be/cert/localhost+2-key.pem'),
+    cert: fs.readFileSync('./be/cert/localhost+2.pem')
+};
 
 // 2. Crea il server HTTPS
-// const server = https.createServer(options, app);
+const server = https.createServer(options, app);
 
 // USA QUESTA VERSIONE (standard)
-const http = require('http');
-const server = http.createServer(app);
+// const http = require('http');
+// const server = http.createServer(app);
 
 // 3. Collega Socket.io al server HTTPS
 const io = new Server(server, {
@@ -56,7 +56,7 @@ io.on('connection', (socket) => {
                 waitingUser = null;
                 console.log('✅ [MATCH] Completato');
             } catch (err) {
-                console.error('❌ [ERRORE] Daily.co:', err.message);
+                console.error('❌ [ERRORE]: ', err.message);
                 socket.emit('match:error', { message: "Errore tecnico" });
             }
         } else {
@@ -65,8 +65,18 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('queue:leave', () => {
+        if (waitingUser && waitingUser.id === socket.id) {
+            waitingUser = null;
+            console.log('🚶 [QUEUE] Utente ' + socket.id + ' ha lasciato la coda');
+        }
+    });
+
     socket.on('disconnect', () => {
-        if (waitingUser && waitingUser.id === socket.id) waitingUser = null;
+        if (waitingUser && waitingUser.id === socket.id) {
+            waitingUser = null;
+            console.log('🔌 [DISCONN] L\'utente in attesa si è disconnesso, coda liberata.');
+        }
     });
 });
 
