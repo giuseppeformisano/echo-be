@@ -3,9 +3,20 @@ const http = require('http');
 const { Server } = require('socket.io');
 const axios = require('axios');
 require('dotenv').config({ path: __dirname + '/.env' });
-
+const fs = require('fs');
+const https = require('https');
 const app = express();
-const server = http.createServer(app);
+
+let server;
+if (process.env.NODE_ENV === 'production') {
+    server = http.createServer(app);
+} else {
+    const options = {
+        key: fs.readFileSync('./be/cert/localhost+2-key.pem'),
+        cert: fs.readFileSync('./be/cert/localhost+2.pem')
+    };
+    server = https.createServer(options, app);
+}
 
 // --- Configurazione ---
 const PORT = process.env.PORT || 4000;
@@ -27,7 +38,8 @@ if (DAILY_API_KEY) {
 }
 
 // --- Stato dell'applicazione ---
-let waitingUser = null;
+let venters = [];   // Coda Sfogatori
+let listeners = []; // Coda Ascoltatori
 const activeRooms = new Map();   // roomId -> Set<socketId>
 const socketRoomMap = new Map(); // socketId -> roomId
 
@@ -65,16 +77,48 @@ const deleteDailyRoom = async (roomId) => {
     }
 };
 
+const startMatch = async (user1, user2) => {
+    console.log(`✨ [MATCH] Trovato: ${user1.id} <-> ${user2.id}`);
+
+    try {
+        const roomData = await createDailyRoom();
+        const matchPayload = { url: roomData.url, roomId: roomData.name };
+
+        // Aggiorna stato stanze
+        const participants = new Set([user1.id, user2.id]);
+        activeRooms.set(roomData.name, participants);
+        socketRoomMap.set(user1.id, roomData.name);
+        socketRoomMap.set(user2.id, roomData.name);
+
+        // Notifica entrambi gli utenti
+        io.to(user1.id).emit('match:found', matchPayload);
+        io.to(user2.id).emit('match:found', matchPayload);
+
+        console.log('✅ [MATCH] Stanze assegnate e utenti notificati.');
+    } catch (err) {
+        // Notifica errore ai client se la creazione stanza fallisce
+        const errorMsg = { message: "Errore tecnico nella creazione della stanza" };
+        user1.emit('match:error', errorMsg);
+        user2.emit('match:error', errorMsg);
+    }
+};
+
 // --- Gestione Eventi Socket ---
 io.on('connection', (socket) => {
     console.log(`✅ [CONNESSIONE] Utente connesso: ${socket.id}`);
 
     // Funzione unificata per pulire lo stato dell'utente (coda o stanza)
     const cleanupUser = async () => {
-        // 1. Rimuovi dalla coda se presente
-        if (waitingUser && waitingUser.id === socket.id) {
-            waitingUser = null;
-            console.log(`🚶 [QUEUE] Utente ${socket.id} rimosso dalla coda.`);
+        // 1. Rimuovi dalle code se presente
+        const venterIndex = venters.findIndex(s => s.id === socket.id);
+        if (venterIndex > -1) {
+            venters.splice(venterIndex, 1);
+            console.log(`🚶 [QUEUE] Venter ${socket.id} rimosso dalla coda.`);
+        }
+        const listenerIndex = listeners.findIndex(s => s.id === socket.id);
+        if (listenerIndex > -1) {
+            listeners.splice(listenerIndex, 1);
+            console.log(`🚶 [QUEUE] Listener ${socket.id} rimosso dalla coda.`);
         }
 
         // 2. Gestione uscita dalla stanza
@@ -96,42 +140,27 @@ io.on('connection', (socket) => {
         }
     };
 
-    socket.on('queue:join', async () => {
-        console.log(`🔍 [QUEUE] Utente ${socket.id} cerca match...`);
-
-        // Se c'è già qualcuno in attesa (e non è lo stesso utente)
-        if (waitingUser && waitingUser.id !== socket.id) {
-            const peer = waitingUser;
-            waitingUser = null; // Resetta la coda immediatamente
-
-            console.log(`✨ [MATCH] Trovato: ${peer.id} <-> ${socket.id}`);
-
-            try {
-                const roomData = await createDailyRoom();
-                const matchPayload = { url: roomData.url, roomId: roomData.name };
-
-                // Aggiorna stato stanze
-                const participants = new Set([socket.id, peer.id]);
-                activeRooms.set(roomData.name, participants);
-                socketRoomMap.set(socket.id, roomData.name);
-                socketRoomMap.set(peer.id, roomData.name);
-
-                // Notifica entrambi gli utenti
-                io.to(socket.id).emit('match:found', matchPayload);
-                io.to(peer.id).emit('match:found', matchPayload);
-
-                console.log('✅ [MATCH] Stanze assegnate e utenti notificati.');
-            } catch (err) {
-                // Notifica errore ai client se la creazione stanza fallisce
-                const errorMsg = { message: "Errore tecnico nella creazione della stanza" };
-                socket.emit('match:error', errorMsg);
-                peer.emit('match:error', errorMsg);
+    socket.on('queue:join', ({ role }) => {
+        console.log(`🔍 [QUEUE] Utente ${socket.id} cerca match come ${role}...`);
+        if (role === 'venter') {
+            if (listeners.length > 0) {
+                const partner = listeners.shift();
+                startMatch(socket, partner);
+            } else {
+                venters.push(socket);
+                socket.emit('queue:searching');
+                console.log(`⏳ [QUEUE] Venter ${socket.id} in attesa.`);
             }
         } else {
-            // Nessuno in coda, mettiti in attesa
-            waitingUser = socket;
-            socket.emit('queue:searching');
-            console.log(`⏳ [QUEUE] Utente ${socket.id} in attesa.`);
+            // Logica speculare per listener
+            if (venters.length > 0) {
+                const partner = venters.shift();
+                startMatch(partner, socket);
+            } else {
+                listeners.push(socket);
+                socket.emit('queue:searching');
+                console.log(`⏳ [QUEUE] Listener ${socket.id} in attesa.`);
+            }
         }
     });
 
