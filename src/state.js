@@ -7,8 +7,8 @@ class AppState {
   constructor() {
     this.venters = []; // Coda Sfogatori
     this.listeners = []; // Coda Ascoltatori
-    // Stato unificato delle stanze/sessioni - UNICA FONTE DI VERITÀ
-    this.callSessions = new Map(); // roomId -> { participants, callDuration, startTime, venterId, listenerId }
+    // roomId -> { participants: Map(socketId -> {userId, role}), callDuration, startTime }
+    this.callSessions = new Map();
   }
 
   // --- Queue Management ---
@@ -54,20 +54,17 @@ class AppState {
     return this.listeners.length > 0;
   }
 
-  // --- Room Management (Unificato con Call Sessions) ---
+  // --- Room Management ---
   createRoom(roomId, participants) {
-    // Ora crea direttamente la callSession con i partecipanti
     const participantsMap = new Map();
     participants.forEach((socketId) => {
-      participantsMap.set(socketId, { userId: null, role: null, joinTime: Date.now() });
+      participantsMap.set(socketId, { userId: null, role: null });
     });
 
     this.callSessions.set(roomId, {
       participants: participantsMap,
       callDuration: null,
       startTime: null,
-      venterId: null,
-      listenerId: null,
     });
   }
 
@@ -77,88 +74,33 @@ class AppState {
 
   getRoom(roomId) {
     const session = this.callSessions.get(roomId);
-    if (!session) return null;
-    // Ritorna un Set di socketIds per compatibilità
-    return new Set(session.participants.keys());
+    return session ? new Set(session.participants.keys()) : null;
   }
 
   mapSocketToRoom(socketId, roomId) {
-    // Non più necessaria una mappa separata - ricaviamo dal participants
     const session = this.callSessions.get(roomId);
     if (session && !session.participants.has(socketId)) {
-      session.participants.set(socketId, { userId: null, role: null, joinTime: Date.now() });
+      session.participants.set(socketId, { userId: null, role: null });
     }
   }
 
   unmapSocket(socketId) {
-    // Trova la stanza del socket e rimuovilo dai participants
     for (const [roomId, session] of this.callSessions.entries()) {
       if (session.participants.has(socketId)) {
         session.participants.delete(socketId);
-        return;
+        return roomId;
       }
     }
   }
 
-  // === Call Session Management (Unificato) ===
+  // --- Call Session Management ---
   createCallSession(roomId) {
-    // Se la sessione già esiste (creata da createRoom), aggiorna solo i metadati
     if (!this.callSessions.has(roomId)) {
       this.callSessions.set(roomId, {
         participants: new Map(),
         callDuration: null,
         startTime: null,
-        venterId: null,
-        listenerId: null,
       });
-    }
-  }
-
-  updateCallSession(roomId, startTime = null) {
-    const session = this.callSessions.get(roomId);
-    if (session) {
-      if (startTime !== null) {
-        session.startTime = startTime;
-      }
-    }
-  }
-
-  getUsersConnected(roomId) {
-    const session = this.callSessions.get(roomId);
-    return session?.participants?.size || 0;
-  }
-
-  removeUserFromRoom(socketId, roomId) {
-    const session = this.callSessions.get(roomId);
-    if (session && session.participants) {
-      session.participants.delete(socketId);
-    }
-  }
-
-  getRoomParticipantCount(roomId) {
-    const session = this.callSessions.get(roomId);
-    return session?.participants?.size || 0;
-  }
-
-  // --- Call Session Management ---
-  createCallSession(roomId) {
-    this.callSessions.set(roomId, {
-      usersConnected: 1,
-      callDuration: null,
-      startTime: null,
-      venterId: null,
-      listenerId: null,
-      participants: new Map(), // socketId -> { userId, role, joinTime }
-    });
-  }
-
-  updateCallSession(roomId, usersConnected, startTime = null) {
-    const session = this.callSessions.get(roomId);
-    if (session) {
-      session.usersConnected = usersConnected;
-      if (startTime !== null) {
-        session.startTime = startTime;
-      }
     }
   }
 
@@ -177,9 +119,21 @@ class AppState {
     }
   }
 
+  getUsersConnected(roomId) {
+    const session = this.callSessions.get(roomId);
+    return session?.participants?.size || 0;
+  }
+
+  removeUserFromRoom(socketId, roomId) {
+    const session = this.callSessions.get(roomId);
+    if (session) {
+      session.participants.delete(socketId);
+    }
+  }
+
   isRoomEmpty(roomId) {
     const session = this.callSessions.get(roomId);
-    return !session || !session.participants || session.participants.size === 0;
+    return !session || session.participants.size === 0;
   }
 
   // --- Participant Information ---
@@ -188,15 +142,8 @@ class AppState {
     if (session) {
       session.participants.set(socketId, {
         userId: participantData.userId,
-        role: participantData.role, // "venter" or "listener"
-        joinTime: Date.now(),
+        role: participantData.role,
       });
-
-      if (participantData.role === "venter") {
-        session.venterId = participantData.userId;
-      } else if (participantData.role === "listener") {
-        session.listenerId = participantData.userId;
-      }
     }
   }
 
@@ -210,12 +157,20 @@ class AppState {
 
   getSessionParticipants(roomId) {
     const session = this.callSessions.get(roomId);
-    if (session) {
-      return {
-        venterId: session.venterId,
-        listenerId: session.listenerId,
-        participants: session.participants,
-      };
+    if (!session) return null;
+    
+    const participants = {};
+    for (const [socketId, data] of session.participants.entries()) {
+      participants[data.role] = { socketId, ...data };
+    }
+    return participants;
+  }
+
+  getSocketRoom(socketId) {
+    for (const [roomId, session] of this.callSessions.entries()) {
+      if (session.participants.has(socketId)) {
+        return roomId;
+      }
     }
     return null;
   }

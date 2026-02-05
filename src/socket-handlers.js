@@ -5,6 +5,7 @@
 const queueService = require("./queue-service");
 const RoomService = require("./room-service");
 const MatchingService = require("./matching-service");
+const rewardService = require("./reward-service");
 
 module.exports = function setupSocketHandlers(io) {
   const roomService = new RoomService();
@@ -53,6 +54,48 @@ module.exports = function setupSocketHandlers(io) {
      */
     socket.on("call:joined", ({ roomId, userId, role }) => {
       roomService.handleCallJoined(socket.id, roomId, { userId, role });
+    });
+
+    /**
+     * Evento: Utente ha terminato la chiamata
+     * Esegue il processing dei reward se la durata è >= 10 minuti
+     */
+    socket.on("call:ended", async ({ roomId, userId }) => {
+      console.log(
+        `🏁 [CALL:ENDED] Utente ${userId} ha terminato la chiamata in ${roomId}`
+      );
+
+      // Notifica l'altro utente della fine della chiamata
+      socket.broadcast.to(roomId).emit("call:peer-ended", { userId });
+
+      // La logica di processing dei reward avverrà automaticamente
+      // quando la stanza diventa vuota (handleRoomExit -> deleteRoom)
+    });
+
+    /**
+     * Evento: Feedback positivo dato allo sfogatore
+     * Assegna +25 XP bonus all'ascoltatore
+     */
+    socket.on("feedback:given", async ({ listenerId, feedback }) => {
+      console.log(
+        `⭐ [FEEDBACK] Feedback ${feedback} ricevuto per listener ${listenerId}`
+      );
+
+      if (feedback === "positive") {
+        const result = await rewardService.processFeedbackBonus(listenerId);
+        socket.emit("feedback:processed", {
+          success: result.success,
+          message: result.message || result.reason,
+        });
+      } else {
+        console.log(
+          `ℹ️ [FEEDBACK] Feedback negativo - nessun bonus XP assegnato`
+        );
+        socket.emit("feedback:processed", {
+          success: true,
+          message: "Feedback registrato",
+        });
+      }
     });
 
     /**

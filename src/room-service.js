@@ -5,6 +5,7 @@
 const state = require("./state");
 const dailyService = require("./daily-service");
 const chatSessionService = require("./chat-session-service");
+const rewardService = require("./reward-service");
 
 class RoomService {
   /**
@@ -15,10 +16,16 @@ class RoomService {
    */
   handleCallJoined(socketId, roomId, participantData) {
     console.log(
-      `📞 [CALL] Utente ${socketId} si è unito alla chiamata ${roomId}`
+      `📞 [CALL] Utente ${socketId} con userId ${participantData?.userId} si è unito alla chiamata ${roomId}`
     );
 
-    // Traccia i dati del partecipante nella sessione
+    // Inizializza sessione se non esiste
+    if (!state.getCallSession(roomId)) {
+      state.createCallSession(roomId);
+      console.log(`🆕 [CALL] Nuova sessione creata per stanza ${roomId}`);
+    }
+
+    // Aggiungi i dati del partecipante
     if (participantData && participantData.userId) {
       state.addParticipantToSession(roomId, socketId, participantData);
       console.log(
@@ -26,28 +33,13 @@ class RoomService {
       );
     }
 
-    // Inizializza o aggiorna la sessione di chiamata
-    if (!state.getCallSession(roomId)) {
-      state.createCallSession(roomId);
-      console.log(`🆕 [CALL] Nuova sessione creata per stanza ${roomId}`);
-    }
-
     const session = state.getCallSession(roomId);
     const usersConnected = state.getUsersConnected(roomId);
 
-    // Salva i dati del venter e del listener
-    if (participantData) {
-      if (participantData.role === "venter") {
-        session.venterId = participantData.userId;
-      } else if (participantData.role === "listener") {
-        session.listenerId = participantData.userId;
-      }
-    }
-
-    // Se è il secondo utente, inizia a tracciare il tempo
+    // Quando entrambi sono connessi, avvia il timer
     if (usersConnected === 2 && session.startTime === null) {
       session.startTime = Date.now();
-      console.log(`⏱️ [CALL] Timer avviato per stanza ${roomId}`);
+      console.log(`⏱️ [CALL] Timer avviato per ${roomId}`);
     }
 
     console.log(
@@ -55,42 +47,36 @@ class RoomService {
     );
   }
 
-  /**
-   * Gestisce l'uscita di un utente da una stanza
-   * @param {string} socketId - ID del socket
-   */
   async handleRoomExit(socketId) {
     const roomId = state.getSocketRoom(socketId);
+    if (!roomId) return;
 
-    if (!roomId) {
-      return;
-    }
+    // Ottieni dati partecipante PRIMA di rimuovere
+    const session = state.getCallSession(roomId);
+    const participantData = state.getParticipantData(roomId, socketId);
 
     state.removeUserFromRoom(socketId, roomId);
     state.unmapSocket(socketId);
 
-    console.log(
-      `🚪 [ROOM] Utente ${socketId} uscito dalla stanza ${roomId}`
-    );
+    console.log(`🚪 [ROOM] Utente ${socketId} uscito da ${roomId}`);
 
-    // Aggiorna la sessione di chiamata
-    const session = state.getCallSession(roomId);
-    if (session) {
-      const usersConnected = state.getUsersConnected(roomId);
+    if (session && session.startTime !== null) {
+      const duration = Math.floor((Date.now() - session.startTime) / 1000);
+      state.setCallDuration(roomId, duration);
 
-      // Se ci sono ancora utenti connessi, calcola la durata
-      if (usersConnected > 0 && session.startTime !== null) {
-        const duration = Math.floor((Date.now() - session.startTime) / 1000);
-        state.setCallDuration(roomId, duration);
-        console.log(`⏱️ [CALL] Durata chiamata ${roomId}: ${duration}s`);
+      // Processa reward individuale se durata >= 10min
+      if (participantData && duration >= 0) {
+        const durationMinutes = Math.floor(duration / 60);
+        console.log(`💰 [REWARD] Processing ${participantData.role} ${participantData.userId}`);
+        
+        if (participantData.role === 'venter') {
+          await rewardService.processVenterReward(participantData.userId, 20);
+        } else if (participantData.role === 'listener') {
+          await rewardService.processListenerReward(participantData.userId, 20, false);
+        }
       }
-
-      console.log(
-        `👥 [CALL] Utenti rimanenti in ${roomId}: ${usersConnected}`
-      );
     }
 
-    // Se la stanza è vuota, eliminala
     if (state.isRoomEmpty(roomId)) {
       await this.deleteRoom(roomId);
     }
@@ -115,11 +101,12 @@ class RoomService {
       }
 
       // Prepara i dati per il salvataggio
-      if (session.venterId && session.listenerId && session.callDuration) {
+      const participants = state.getSessionParticipants(roomId);
+      if (participants?.venter && participants?.listener && session.callDuration) {
         const sessionData = {
           roomId: roomId,
-          venterId: session.venterId,
-          listenerId: session.listenerId,
+          venterId: participants.venter.userId,
+          listenerId: participants.listener.userId,
           durationSeconds: session.callDuration,
           startedAt: new Date(session.startTime).toISOString(),
           endedAt: new Date().toISOString(),
@@ -128,6 +115,7 @@ class RoomService {
 
         // Salva su Supabase
         await chatSessionService.saveSession(sessionData);
+        console.log(`💾 [CALL] Sessione salvata per stanza ${roomId}`);
       }
 
       state.deleteCallSession(roomId);

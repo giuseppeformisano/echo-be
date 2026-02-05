@@ -22,12 +22,6 @@ class MatchingService {
       const roomData = await dailyService.createRoom();
       const matchPayload = { url: roomData.url, roomId: roomData.name };
 
-      // Aggiorna stato stanze
-      const participants = new Set([user1.id, user2.id]);
-      state.createRoom(roomData.name, participants);
-      state.mapSocketToRoom(user1.id, roomData.name);
-      state.mapSocketToRoom(user2.id, roomData.name);
-
       // Notifica entrambi gli utenti
       this.io.to(user1.id).emit("match:found", matchPayload);
       this.io.to(user2.id).emit("match:found", matchPayload);
