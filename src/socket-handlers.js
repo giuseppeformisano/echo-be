@@ -47,8 +47,8 @@ module.exports = function setupSocketHandlers(io) {
     /**
      * Evento: Utente si è unito a una chiamata
      */
-    socket.on("call:joined", ({ roomId }) => {
-      roomService.handleCallJoined(socket.id, roomId);
+    socket.on("call:joined", ({ roomId, userId, role }) => {
+      roomService.handleCallJoined(socket.id, roomId, { userId, role });
     });
 
     /**
