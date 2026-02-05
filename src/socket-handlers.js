@@ -27,7 +27,11 @@ module.exports = function setupSocketHandlers(io) {
     /**
      * Evento: Utente vuole unirsi alla coda
      */
-    socket.on("queue:join", ({ role }) => {
+    socket.on("queue:join", ({ role, userId }) => {
+      // Opzionalmente salva userId nel socket per riferimento futuro
+      if (userId) {
+        socket.userId = userId;
+      }
       queueService.handleQueueJoin(
         socket,
         role,
