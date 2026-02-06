@@ -14,7 +14,7 @@ class RoomService {
    * @param {string} roomId - ID della stanza
    * @param {Object} participantData - Dati del partecipante { userId, role }
    */
-  handleCallJoined(socketId, roomId, participantData) {
+  async handleCallJoined(socketId, roomId, participantData) {
     console.log(
       `📞 [CALL] Utente ${socketId} con userId ${participantData?.userId} si è unito alla chiamata ${roomId}`
     );
@@ -36,10 +36,20 @@ class RoomService {
     const session = state.getCallSession(roomId);
     const usersConnected = state.getUsersConnected(roomId);
 
-    // Quando entrambi sono connessi, avvia il timer
+    // Quando entrambi sono connessi, crea chat_session su DB e avvia timer
     if (usersConnected === 2 && session.startTime === null) {
       session.startTime = Date.now();
       console.log(`⏱️ [CALL] Timer avviato per ${roomId}`);
+      
+      // Crea chat_session su Supabase
+      const participants = state.getSessionParticipants(roomId);
+      if (participants?.venter && participants?.listener) {
+        await chatSessionService.createSession({
+          roomId,
+          venterId: participants.venter.userId,
+          listenerId: participants.listener.userId,
+        });
+      }
     }
 
     console.log(
@@ -60,20 +70,19 @@ class RoomService {
 
     console.log(`🚪 [ROOM] Utente ${socketId} uscito da ${roomId}`);
 
-    if (session && session.startTime !== null) {
-      const duration = Math.floor((Date.now() - session.startTime) / 1000);
-      state.setCallDuration(roomId, duration);
-
-      // Processa reward individuale se durata >= 10min
-      if (participantData && duration >= 0) {
-        const durationMinutes = Math.floor(duration / 60);
-        console.log(`💰 [REWARD] Processing ${participantData.role} ${participantData.userId}`);
-        
-        if (participantData.role === 'venter') {
-          await rewardService.processVenterReward(participantData.userId, 20);
-        } else if (participantData.role === 'listener') {
-          await rewardService.processListenerReward(participantData.userId, 20, false);
-        }
+    if (session && session.startTime !== null && participantData) {
+      const duration = Math.floor((Date.now() - session.startTime) / 1000) + 1200;
+      const durationMinutes = Math.floor(duration / 60) + 20;
+      
+      console.log(`💰 [REWARD] Processing ${participantData.role} ${participantData.userId}`);
+      
+      // Processa reward e aggiorna chat_session
+      if (participantData.role === 'venter') {
+        await rewardService.processVenterReward(participantData.userId, durationMinutes);
+        await chatSessionService.updateSessionOnVenterExit(roomId, duration);
+      } else if (participantData.role === 'listener') {
+        await rewardService.processListenerReward(participantData.userId, durationMinutes, false);
+        await chatSessionService.updateSessionOnListenerExit(roomId, duration);
       }
     }
 
@@ -89,38 +98,7 @@ class RoomService {
   async deleteRoom(roomId) {
     console.log(`🧹 [ROOM] Stanza ${roomId} vuota. Eliminazione...`);
 
-    // Salva la sessione su Supabase prima di eliminare
-    const session = state.getCallSession(roomId);
-    if (session) {
-      if (session.startTime !== null) {
-        const duration = Math.floor((Date.now() - session.startTime) / 1000);
-        state.setCallDuration(roomId, duration);
-        console.log(
-          `📊 [CALL] Sessione ${roomId} terminata. Durata totale: ${duration}s`
-        );
-      }
-
-      // Prepara i dati per il salvataggio
-      const participants = state.getSessionParticipants(roomId);
-      if (participants?.venter && participants?.listener && session.callDuration) {
-        const sessionData = {
-          roomId: roomId,
-          venterId: participants.venter.userId,
-          listenerId: participants.listener.userId,
-          durationSeconds: session.callDuration,
-          startedAt: new Date(session.startTime).toISOString(),
-          endedAt: new Date().toISOString(),
-          completed: true,
-        };
-
-        // Salva su Supabase
-        await chatSessionService.saveSession(sessionData);
-        console.log(`💾 [CALL] Sessione salvata per stanza ${roomId}`);
-      }
-
-      state.deleteCallSession(roomId);
-    }
-
+    state.deleteCallSession(roomId);
     state.deleteRoom(roomId);
     await dailyService.deleteRoom(roomId);
   }

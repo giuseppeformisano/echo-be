@@ -57,6 +57,63 @@ module.exports = function setupSocketHandlers(io) {
     });
 
     /**
+     * Evento: Utente invia un feedback per l'ascoltatore
+     */
+    socket.on("submit_feedback", async ({ roomId, rating }) => {
+      console.log(`⭐ [FEEDBACK] Ricevuto rating ${rating} per room ${roomId}}`);
+      
+      try {
+        const chatSessionService = require('./chat-session-service');
+        const score = rating >= 4;
+        
+        // Salva review con nuovo schema
+        const reviewResult = await chatSessionService.saveReview({
+          roomId,
+          score,
+          tags: [],
+          comment: null,
+        });
+        
+        if (!reviewResult.success) {
+          console.error(`❌ [FEEDBACK] Errore salvataggio review:`, reviewResult.error);
+          return;
+        }
+        
+        // Se score positivo, assegna bonus XP al listener
+        if (score) {
+          const session = await chatSessionService.getSessionByRoomId(roomId);
+          if (session?.listener_id) {
+            await rewardService.processFeedbackBonus(session.listener_id);
+            console.log(`✅ [FEEDBACK] Bonus XP assegnato a listener`);
+          }
+        }
+        
+        console.log(`✅ [FEEDBACK] Review salvata per room ${roomId}`);
+      } catch (error) {
+        console.error(`❌ [FEEDBACK] Errore:`, error);
+      }
+    });
+
+    /**
+     * Evento: Recupera le reviews di un listener
+     */
+    socket.on("get_listener_reviews", async ({ listenerId }, callback) => {
+      try {
+        const chatSessionService = require('./chat-session-service');
+        const reviews = await chatSessionService.getListenerReviews(listenerId);
+        
+        if (callback) {
+          callback({ success: true, reviews });
+        }
+      } catch (error) {
+        console.error(`❌ [REVIEWS] Errore recupero reviews:`, error);
+        if (callback) {
+          callback({ success: false, error: error.message });
+        }
+      }
+    });
+
+    /**
      * Evento: Utente si disconnette
      */
     socket.on("disconnect", () => {

@@ -191,6 +191,29 @@ class RewardService {
     console.log(`⭐ [FEEDBACK] Elaborazione bonus feedback positivo per ${listenerId}`);
     return await this.processListenerReward(listenerId, 0, true);
   }
+
+  /**
+   * Salva il rating assegnato dall'utente
+   * @param {string} roomId - ID della stanza
+   * @param {string} listenerId - ID dell'ascoltatore
+   * @param {number} rating - Voto da 1 a 5
+   * @returns {Promise<Object>} - Risultato del salvataggio
+   */
+  async saveRating(roomId, listenerId, rating) {
+    try {
+      console.log(`⭐ [RATING] Salvataggio rating ${rating} per listener ${listenerId} in stanza ${roomId}`);
+      
+      // Se il rating è 4 o 5, assegna bonus XP
+      if (rating >= 4) {
+        await this.processFeedbackBonus(listenerId);
+      }
+
+      return { success: true, message: "Rating salvato con successo" };
+    } catch (error) {
+      console.error(`❌ [RATING] Errore nel salvataggio:`, error);
+      return { success: false, message: error.message };
+    }
+  }
 }
 
 module.exports = new RewardService();
