@@ -60,12 +60,11 @@ module.exports = function setupSocketHandlers(io) {
     /**
      * Evento: Utente invia un feedback per l'ascoltatore
      */
-    socket.on("submit_feedback", async ({ roomId, rating }) => {
-      console.log(`⭐ [FEEDBACK] Ricevuto rating ${rating} per room ${roomId}}`);
+    socket.on("call:submit_feedback", async ({ roomId, score }) => {
+      console.log(`⭐ [FEEDBACK] Ricevuto rating ${score} per room ${roomId}}`);
       
       try {
         const chatSessionService = require('./chat-session-service');
-        const score = rating >= 4;
         
         // Salva review con nuovo schema
         const reviewResult = await chatSessionService.saveReview({
@@ -81,12 +80,10 @@ module.exports = function setupSocketHandlers(io) {
         }
         
         // Se score positivo, assegna bonus XP al listener
-        if (score) {
-          const session = await chatSessionService.getSessionByRoomId(roomId);
-          if (session?.listener_id) {
-            await rewardService.processFeedbackBonus(session.listener_id);
-            console.log(`✅ [FEEDBACK] Bonus XP assegnato a listener`);
-          }
+        const session = await chatSessionService.getSessionByRoomId(roomId);
+        if (session?.listener_id) {
+          await rewardService.processFeedbackBonus(session.listener_id, rating);
+          console.log(`✅ [FEEDBACK] Bonus XP assegnato a listener`);
         }
         
         console.log(`✅ [FEEDBACK] Review salvata per room ${roomId}`);

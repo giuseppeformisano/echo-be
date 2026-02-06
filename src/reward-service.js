@@ -187,9 +187,49 @@ class RewardService {
    * @param {string} listenerId - ID dell'ascoltatore
    * @returns {Promise<Object>} - Risultato della RPC
    */
-  async processFeedbackBonus(listenerId) {
+  async processFeedbackBonus(listenerId, rating) {
     console.log(`⭐ [FEEDBACK] Elaborazione bonus feedback positivo per ${listenerId}`);
-    return await this.processListenerReward(listenerId, 0, true);
+    try {
+      if (!supabase) {
+        throw new Error("Supabase client not initialized");
+      }
+
+      const { data, error } = await supabase.rpc(
+        "process_listener_feedback_reward",
+        {
+          p_listener_id: listenerId,
+          p_rating: rating,
+        }
+      );
+
+      if (error) {
+        console.error(
+          `❌ [LISTENER] RPC error per ${listenerId}:`,
+          error.message
+        );
+        return { success: false, message: error.message };
+      }
+
+      console.log(
+        `👤 [LISTENER] Reward processato per ${listenerId}: +${xpAwarded} XP ${
+          isPositive ? "(bonus feedback positivo)" : ""
+        }`
+      );
+
+      return {
+        success: true,
+        message: `${xpAwarded} XP assegnati ${
+          isPositive ? "(bonus feedback)" : ""
+        }`,
+        data,
+      };
+    } catch (error) {
+      console.error(
+        `❌ [LISTENER] Eccezione nel processing listener ${listenerId}:`,
+        error
+      );
+      return { success: false, message: error.message };
+    }
   }
 
   /**
