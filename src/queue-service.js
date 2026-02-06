@@ -10,11 +10,28 @@ class QueueService {
    * @param {Object} socket - Socket.IO socket
    * @param {string} role - "venter" o "listener"
    * @param {Function} onMatchFound - Callback quando viene trovato un match
+   * @param {string} userId - ID dell'utente (opzionale per validazione)
    */
-  handleQueueJoin(socket, role, onMatchFound) {
+  async handleQueueJoin(socket, role, onMatchFound, userId = null) {
     console.log(
       `🔍 [QUEUE] Utente ${socket.id} cerca match come ${role}...`
     );
+
+    // Validazione crediti per venter
+    if (role === "venter" && userId) {
+      const supabase = require("./supabaseClient");
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("credits")
+        .eq("id", userId)
+        .single();
+
+      if (!profile || profile.credits < 1) {
+        console.warn(`⚠️ [QUEUE] Venter ${socket.id} ha crediti insufficienti`);
+        socket.emit("queue:error", { message: "Crediti insufficienti per iniziare una chiamata" });
+        return;
+      }
+    }
 
     if (role === "venter") {
       if (state.hasListeners()) {

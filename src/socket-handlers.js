@@ -38,7 +38,8 @@ module.exports = function setupSocketHandlers(io) {
         role,
         (user1, user2) => {
           matchingService.startMatch(user1, user2);
-        }
+        },
+        userId
       );
     });
 
