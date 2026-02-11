@@ -216,16 +216,36 @@ class ChatSessionService {
     if (!this.supabase) {
       return { success: false, error: "Supabase non inizializzato" };
     }
-
     try {
+      // Recupera sessione per ricavare listener_id
+      const session = await this.getSessionByRoomId(reviewData.roomId);
+      const listenerId = session?.listener_id || null;
+
+      const empathy = reviewData.empathy;
+      const presence = reviewData.presence;
+      const non_judgment = reviewData.non_judgment;
+      const usefulness = reviewData.usefulness;
+
+      const v_rating = (
+        Number(empathy || 0) +
+        Number(presence || 0) +
+        Number(non_judgment || 0) +
+        Number(usefulness || 0)
+      ) / 4.0;
+
       const { data, error } = await this.supabase
         .from("reviews")
-        .insert([{
-          room_id: reviewData.roomId,
-          score: reviewData.score,
-          tags: reviewData.tags || [],
-          comment: reviewData.comment || null,
-        }])
+        .insert([
+          {
+            room_id: reviewData.roomId,
+            empathy: empathy,
+            presence: presence,
+            non_judgment: non_judgment,
+            usefulness: usefulness,
+            tags: reviewData.tags || [],
+            comment: reviewData.comment || null,
+          },
+        ])
         .select()
         .single();
 
@@ -234,7 +254,19 @@ class ChatSessionService {
       }
 
       console.log(`✅ [DB] Review salvata per room ${reviewData.roomId}`);
-      return { success: true, data };
+
+      // Assegna eventuale bonus XP basato sul rating medio tramite rewardService
+      try {
+        if (listenerId) {
+          const rewardService = require("./reward-service");
+          await rewardService.processFeedbackBonus(listenerId, Number(v_rating));
+          console.log(`✅ [FEEDBACK] Elaborato bonus per listener ${listenerId} (avg=${v_rating})`);
+        }
+      } catch (err) {
+        console.error(`❌ [FEEDBACK] Errore assegnazione bonus:`, err);
+      }
+
+      return { success: true, data, v_rating };
     } catch (error) {
       return { success: false, error: error.message };
     }
